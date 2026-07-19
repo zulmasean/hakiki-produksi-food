@@ -1,0 +1,21 @@
+{
+  "name": "wa-produksi-bot",
+  "version": "1.0.0",
+  "description": "Bot pencatat laporan produksi dari 1 grup WhatsApp ke 1 Google Sheet",
+  "main": "bot-produksi.js",
+  "scripts": {
+    "start": "node bot-produksi.js",
+    "test-parser": "node test-parser-produksi.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "pino": "^9.2.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "allowScripts": {
+    "@whiskeysockets/baileys@6.7.23": true,
+    "protobufjs@7.6.5": true
+  }
+}
