@@ -1,31 +1,12 @@
 // parser-produksi.js
-// Mengubah teks laporan produksi WhatsApp menjadi data terstruktur dengan VALIDASI KETAT.
-// Format yang diterima:
-//
-//   Produksi <Outlet> <Tanggal bebas>
-//
-//   Total produksi : <angka>
-//
-//   * <nama item> <jumlah/nominal>
-//   * <nama item> <jumlah/nominal>
-//   ...
-//
-// Angka TERAKHIR di setiap baris item dianggap sebagai nominal, sisanya
-// (di depannya) dianggap nama/deskripsi item. Contoh:
-//   "* ayam 3kg 30000"     -> deskripsi: "ayam 3kg",   jumlah: 30000
-//   "* garam 1 bks 2000"   -> deskripsi: "garam 1 bks", jumlah: 2000
-//
-// Baris boleh diawali "*" atau "-".
 
 function toNumber(raw, labelForError) {
   if (raw === undefined || raw === null) return 0;
   let s = String(raw).trim();
   if (s === '' || s === '-') return 0;
 
-  // Bersihkan "Rp" di awal agar tidak dianggap huruf
   s = s.replace(/^rp\.?\s*/i, '').trim();
 
-  // Format ribuan singkatan: "150rb" atau "150k"
   const kMatch = s.match(/^([\d.,]+)\s*(rb|k)$/i);
   if (kMatch) {
     const numStr = kMatch[1].replace(/\./g, '').replace(',', '.');
@@ -35,8 +16,6 @@ function toNumber(raw, labelForError) {
   }
 
   s = s.replace(/\./g, '').replace(/,/g, '.');
-
-  // Number() sangat ketat. Jika ada 1 huruf saja, hasilnya NaN
   const n = Number(s);
 
   if (isNaN(n)) {
@@ -45,23 +24,14 @@ function toNumber(raw, labelForError) {
   return Math.round(n);
 }
 
-// Daftar outlet yang sah untuk laporan produksi. Tambahkan di sini jika
-// suatu saat produksi juga dipakai lebih dari 1 outlet.
 const KNOWN_OUTLETS_PRODUKSI = ['palmerah'];
 
 function normalizeLabel(label) {
   return label.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Parse 1 baris item produksi. Angka terakhir pada baris = nominal,
- * sisanya = deskripsi. Jika tidak ada angka valid di akhir baris,
- * ini dianggap kesalahan format (bukan diabaikan diam-diam).
- */
 function parseProduksiItemLine(line, criticalErrors) {
   const cleaned = line.replace(/^[-•*]+\s*/, '').trim();
-
-  // Ambil token angka terakhir (boleh pakai titik/koma ribuan, atau akhiran rb/k)
   const match = cleaned.match(/^(.+?)\s+([\d][\d.,]*\s*(?:rb|k)?)$/i);
 
   if (!match) {
@@ -100,7 +70,6 @@ function parseProduksiReport(rawText, outletFromGroup) {
   };
 
   let firstLineHandled = false;
-  let totalFound = false;
 
   for (const line of lines) {
     if (!firstLineHandled) {
@@ -145,15 +114,9 @@ function parseProduksiReport(rawText, outletFromGroup) {
       continue;
     }
 
+    // ABAIKAN jika admin masih mengetik "Total produksi :" karena kita hitung otomatis
     if (/^total\s*produksi\s*:/i.test(line)) {
-      totalFound = true;
-      const val = line.split(':').slice(1).join(':').trim();
-      try {
-        result.totalProduksi = toNumber(val, 'Total produksi');
-      } catch (e) {
-        result.criticalErrors.push(e.message);
-      }
-      continue;
+      continue; 
     }
 
     if (/^[-•*]/.test(line)) {
@@ -165,19 +128,12 @@ function parseProduksiReport(rawText, outletFromGroup) {
     result.criticalErrors.push(`Baris salah ketik / format tidak dikenali: "${line}"`);
   }
 
-  if (!totalFound) {
-    result.criticalErrors.push('Baris "Total produksi : <angka>" tidak ditemukan / hilang.');
-  }
   if (result.items.length === 0) {
     result.criticalErrors.push('Tidak ada item produksi yang tercatat (baris harus diawali "*" atau "-").');
   }
 
-  const itemsSum = result.items.reduce((sum, it) => sum + it.amount, 0);
-  if (result.totalProduksi > 0 && Math.abs(itemsSum - result.totalProduksi) > 1) {
-    result.warnings.push(
-      `Total produksi tertulis (${result.totalProduksi}) ≠ Jumlah rincian item (${itemsSum})`
-    );
-  }
+  // HITUNG TOTAL OTOMATIS
+  result.totalProduksi = result.items.reduce((sum, it) => sum + it.amount, 0);
 
   return result;
 }
