@@ -42,17 +42,13 @@ async function handleProduksiText({ sock, jid, text }) {
   try {
     const parsed = parseProduksiReport(text, PRODUKSI_OUTLET);
 
-    // =========================================================
-    // TEMBOK PERTAHANAN: TOLAK JIKA ADA TYPO / BUKAN ANGKA
-    // (perilaku sama seperti bot sales — validasi tidak diubah)
-    // =========================================================
     if (parsed.criticalErrors && parsed.criticalErrors.length > 0) {
       console.log(`\n[DEBUG] Laporan produksi DITOLAK karena salah format/typo.`);
 
       const errorMsg = `❌ *LAPORAN PRODUKSI DITOLAK (Ada Kesalahan Format/Typo)* ❌\n\nSistem menemukan kesalahan pada tulisan Anda. Laporan *TIDAK DISIMPAN* ke Google Sheet.\n\nSilakan perbaiki kesalahan berikut dan kirim ulang sebagai pesan baru:\n\n- ${parsed.criticalErrors.join('\n- ')}`;
 
       await sock.sendMessage(jid, { text: errorMsg });
-      return; // Berhenti! Data tidak dikirim ke Sheet
+      return; 
     }
 
     const reportId = buildReportId(jid, parsed.outlet, parsed.tanggalText);
@@ -62,7 +58,7 @@ async function handleProduksiText({ sock, jid, text }) {
       reportId,
       outlet: parsed.outlet,
       tanggalText: parsed.tanggalText,
-      totalProduksi: parsed.totalProduksi,
+      totalProduksi: parsed.totalProduksi, // Ini sekarang hasil hitungan otomatis
       items: parsed.items,
       raw: parsed.raw,
     });
@@ -70,12 +66,15 @@ async function handleProduksiText({ sock, jid, text }) {
     const wasUpdate = response?.data?.wasUpdate;
 
     const warningText = (parsed.warnings && parsed.warnings.length > 0)
-        ? `\n\n⚠️ *Catatan (Info Selisih):*\n- ${parsed.warnings.join('\n- ')}`
+        ? `\n\n⚠️ *Catatan:*\n- ${parsed.warnings.join('\n- ')}`
         : '';
 
+    // Format angka ribuan dengan titik
+    const totalFormatted = new Intl.NumberFormat('id-ID').format(parsed.totalProduksi);
+
     const statusText = wasUpdate
-        ? `🔄 Laporan Produksi *${parsed.outlet}* (${parsed.tanggalText || '-'}) berhasil *DIPERBARUI (REVISI)* di Google Sheet.`
-        : `✅ Laporan Produksi *${parsed.outlet}* (${parsed.tanggalText || '-'}) berhasil *DICATAT* ke Google Sheet.`;
+        ? `🔄 Laporan Produksi *${parsed.outlet}* (${parsed.tanggalText || '-'}) berhasil *DIPERBARUI (REVISI)* di Google Sheet.\n\n📊 *Total Perhitungan Otomatis: ${totalFormatted}*`
+        : `✅ Laporan Produksi *${parsed.outlet}* (${parsed.tanggalText || '-'}) berhasil *DICATAT* ke Google Sheet.\n\n📊 *Total Perhitungan Otomatis: ${totalFormatted}*`;
 
     await sock.sendMessage(jid, { text: `${statusText}${warningText}` });
   } catch (err) {
