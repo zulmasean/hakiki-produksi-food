@@ -11,15 +11,20 @@ const qrcode = require('qrcode-terminal');
 const { parseProduksiReport } = require('./parser-produksi');
 
 // ============================================================
-// 1) ISI ID GRUP WHATSAPP UNTUK PRODUKSI DI SINI (HANYA 1 GRUP)
-//    Cara cari ID grup: jalankan bot ini sekali, kirim pesan apapun
-//    ke grup yang dimaksud, lalu lihat log CLI "Pesan dari grup
-//    belum terdaftar: <ID>" akan muncul di bot sales. Untuk bot ini,
-//    cukup jalankan dulu tanpa mengisi PRODUKSI_GROUP_JID yang benar,
-//    ID grup akan tetap bisa dilihat lewat log Baileys / bot sales Anda.
+// ISI ID GRUP WHATSAPP UNTUK 3 BRAND PRODUKSI DI SINI.
+// Cara cari ID grup: jalankan bot ini, kirim pesan apapun dari grup yang
+// dimaksud, lalu lihat log CLI "Pesan dari grup belum terdaftar: <ID>".
+// Salin ID tersebut ke bawah ini sesuai brand-nya.
+//
+// CATATAN: Grup lama (yang sebelumnya dipakai untuk 1 outlet "Palmerah")
+// sekarang otomatis dipetakan ke brand "Pempek Makcik", supaya laporan
+// yang sudah masuk dari grup itu tetap tercatat di bawah brand ini.
 // ============================================================
-const PRODUKSI_GROUP_JID = '120363429638585360@g.us'; // GANTI dengan ID grup produksi
-const PRODUKSI_OUTLET = 'Palmerah'; // GANTI sesuai nama outlet produksi
+const GROUP_CONFIG = {
+  '120363429638585360@g.us': 'Pempek Makcik', // grup lama -> otomatis jadi Pempek Makcik
+  'ISI_ID_GRUP_MIE_AYAM_HAKIKI@g.us': 'Mie Ayam Hakiki', // GANTI dengan ID grup Mie Ayam Hakiki
+  'ISI_ID_GRUP_AYAM_KABUPATEN@g.us': 'Ayam Kabupaten', // GANTI dengan ID grup Ayam Kabupaten
+};
 
 const APPS_SCRIPT_URL = process.env.PRODUKSI_APPS_SCRIPT_URL;
 const SHARED_SECRET = process.env.PRODUKSI_SHARED_SECRET;
@@ -38,27 +43,27 @@ function buildReportId(jid, outlet, tanggalText) {
   return `${jid}::${normalizedOutlet}::${normalizedTanggal}`;
 }
 
-async function handleProduksiText({ sock, jid, text }) {
+async function handleProduksiText({ sock, jid, text, outlet }) {
   try {
-    const parsed = parseProduksiReport(text, PRODUKSI_OUTLET);
+    const parsed = parseProduksiReport(text, outlet);
 
     if (parsed.criticalErrors && parsed.criticalErrors.length > 0) {
-      console.log(`\n[DEBUG] Laporan produksi DITOLAK karena salah format/typo.`);
+      console.log(`\n[DEBUG] Laporan produksi (${outlet}) DITOLAK karena salah format/typo.`);
 
       const errorMsg = `❌ *LAPORAN PRODUKSI DITOLAK (Ada Kesalahan Format/Typo)* ❌\n\nSistem menemukan kesalahan pada tulisan Anda. Laporan *TIDAK DISIMPAN* ke Google Sheet.\n\nSilakan perbaiki kesalahan berikut dan kirim ulang sebagai pesan baru:\n\n- ${parsed.criticalErrors.join('\n- ')}`;
 
       await sock.sendMessage(jid, { text: errorMsg });
-      return; 
+      return;
     }
 
     const reportId = buildReportId(jid, parsed.outlet, parsed.tanggalText);
-    console.log(`\n[DEBUG] Memproses laporan produksi - reportId: ${reportId}`);
+    console.log(`\n[DEBUG] Memproses laporan produksi (${outlet}) - reportId: ${reportId}`);
 
     const response = await sendToSheet({
       reportId,
       outlet: parsed.outlet,
       tanggalText: parsed.tanggalText,
-      totalProduksi: parsed.totalProduksi, // Ini sekarang hasil hitungan otomatis
+      totalProduksi: parsed.totalProduksi, // Hasil hitungan otomatis
       items: parsed.items,
       raw: parsed.raw,
     });
@@ -69,7 +74,6 @@ async function handleProduksiText({ sock, jid, text }) {
         ? `\n\n⚠️ *Catatan:*\n- ${parsed.warnings.join('\n- ')}`
         : '';
 
-    // Format angka ribuan dengan titik
     const totalFormatted = new Intl.NumberFormat('id-ID').format(parsed.totalProduksi);
 
     const statusText = wasUpdate
@@ -83,8 +87,6 @@ async function handleProduksiText({ sock, jid, text }) {
 }
 
 async function startBot() {
-  // auth_session terpisah dari bot sales, supaya bisa dijalankan sebagai
-  // proses/nomor WhatsApp yang berbeda tanpa bentrok sesi login.
   const { state, saveCreds } = await useMultiFileAuthState('./auth_session_produksi');
   const { version } = await fetchLatestBaileysVersion();
   const usePairingCode = process.env.USE_PAIRING_CODE === 'true';
@@ -117,7 +119,7 @@ async function startBot() {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
-      console.log('✅ Bot Produksi WhatsApp tersambung dan siap menerima laporan.\n');
+      console.log('✅ Bot Produksi WhatsApp tersambung dan siap menerima laporan dari 3 grup.\n');
     }
   });
 
@@ -130,10 +132,11 @@ async function startBot() {
       // Pastikan pesan berasal dari Grup (diakhiri dengan @g.us)
       if (!jid || !jid.endsWith('@g.us')) continue;
 
-      // DETEKSI ID GRUP BELUM SESUAI / BELUM DIISI
-      if (jid !== PRODUKSI_GROUP_JID) {
+      // Cari tahu grup ini terdaftar untuk brand apa
+      const outlet = GROUP_CONFIG[jid];
+      if (!outlet) {
         console.log(`ℹ️ Pesan dari grup belum terdaftar sebagai grup produksi: ${jid}`);
-        continue; // Hentikan proses, karena grup belum cocok dengan PRODUKSI_GROUP_JID
+        continue;
       }
 
       const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
@@ -141,8 +144,8 @@ async function startBot() {
       // TANGKAP TYPO KATA "PRODUKSI"
       if (!text || !/^(produksi|produksy|produski|produkasi)\b/i.test(text.trim())) continue;
 
-      console.log(`\n📩 [PESAN MASUK PRODUKSI] Terdeteksi dari grup ${PRODUKSI_OUTLET}`);
-      await handleProduksiText({ sock, jid, text });
+      console.log(`\n📩 [PESAN MASUK PRODUKSI] Terdeteksi dari grup ${outlet}`);
+      await handleProduksiText({ sock, jid, text, outlet });
     }
   });
 }
