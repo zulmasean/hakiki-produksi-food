@@ -24,7 +24,12 @@ function toNumber(raw, labelForError) {
   return Math.round(n);
 }
 
-const KNOWN_OUTLETS_PRODUKSI = ['palmerah'];
+// Daftar nama brand/outlet yang dikenali sistem (huruf kecil).
+// Diurutkan dari yang paling panjang supaya pencocokan prefix tidak
+// salah potong ketika satu nama adalah awalan dari nama lain.
+const KNOWN_OUTLETS_PRODUKSI = ['mie ayam hakiki', 'ayam kabupaten', 'pempek makcik'].sort(
+  (a, b) => b.length - a.length
+);
 
 function normalizeLabel(label) {
   return label.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
@@ -95,11 +100,11 @@ function parseProduksiReport(rawText, outletFromGroup) {
         const outletGroupLower = outletFromGroup.toLowerCase();
         if (writtenOutlet && writtenOutlet !== outletGroupLower) {
           result.criticalErrors.push(
-            `SALAH GRUP! Anda mengirim laporan untuk cabang *${writtenOutlet.toUpperCase()}* di dalam grup *${outletFromGroup.toUpperCase()}*.`
+            `SALAH GRUP! Anda mengirim laporan untuk brand *${writtenOutlet.toUpperCase()}* di dalam grup *${outletFromGroup.toUpperCase()}*.`
           );
         } else if (!writtenOutlet && !restLower.startsWith(outletGroupLower)) {
           result.criticalErrors.push(
-            `Nama outlet pada baris pertama salah ketik atau tidak sesuai dengan nama grup ini (*${outletFromGroup.toUpperCase()}*).`
+            `Nama brand pada baris pertama salah ketik atau tidak sesuai dengan nama grup ini (*${outletFromGroup.toUpperCase()}*).`
           );
         }
 
@@ -116,7 +121,7 @@ function parseProduksiReport(rawText, outletFromGroup) {
 
     // ABAIKAN jika admin masih mengetik "Total produksi :" karena kita hitung otomatis
     if (/^total\s*produksi\s*:/i.test(line)) {
-      continue; 
+      continue;
     }
 
     if (/^[-•*]/.test(line)) {
