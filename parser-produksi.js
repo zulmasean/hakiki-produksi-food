@@ -35,6 +35,34 @@ function normalizeLabel(label) {
   return label.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+// Nama-nama hari yang boleh dihilangkan dari teks tanggal.
+const DAY_NAMES = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', "jum'at", 'jumat', 'sabtu', 'minggu'];
+
+// Ubah satu kata jadi Title Case (huruf depan besar, sisanya kecil).
+// Kata yang diawali angka (mis. "27" atau "2026") dibiarkan apa adanya.
+function titleCaseWord(word) {
+  if (!word) return word;
+  if (/^[0-9]/.test(word)) return word;
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+// Bersihkan teks tanggal:
+// 1. Rapikan spasi ganda jadi 1 spasi.
+// 2. Buang kata pertama jika itu nama hari (mis. "Minggu 27 Juli 2026" -> "27 Juli 2026").
+// 3. Ubah setiap kata jadi Title Case (mis. "27 juli 2026" -> "27 Juli 2026").
+function cleanTanggalText(rawTanggal) {
+  let s = String(rawTanggal || '').replace(/\s+/g, ' ').trim();
+  if (!s) return s;
+
+  const words = s.split(' ');
+  const firstWordClean = words[0].toLowerCase().replace(/[^a-z']/g, '');
+  if (DAY_NAMES.includes(firstWordClean)) {
+    words.shift();
+  }
+
+  return words.map(titleCaseWord).join(' ').trim();
+}
+
 function parseProduksiItemLine(line, criticalErrors) {
   const cleaned = line.replace(/^[-•*]+\s*/, '').trim();
   const match = cleaned.match(/^(.+?)\s+([\d][\d.,]*\s*(?:rb|k)?)$/i);
@@ -109,12 +137,13 @@ function parseProduksiReport(rawText, outletFromGroup) {
         }
 
         const matchedLen = writtenOutlet ? writtenOutlet.length : outletFromGroup.length;
-        result.tanggalText = restLower.startsWith(writtenOutlet || outletGroupLower)
+        const tanggalRaw = restLower.startsWith(writtenOutlet || outletGroupLower)
           ? rest.slice(matchedLen).trim()
           : rest.trim();
+        result.tanggalText = cleanTanggalText(tanggalRaw);
         result.outlet = outletFromGroup;
       } else {
-        result.tanggalText = rest.trim();
+        result.tanggalText = cleanTanggalText(rest.trim());
       }
       continue;
     }
@@ -143,4 +172,4 @@ function parseProduksiReport(rawText, outletFromGroup) {
   return result;
 }
 
-module.exports = { parseProduksiReport, toNumber, parseProduksiItemLine, normalizeLabel };
+module.exports = { parseProduksiReport, toNumber, parseProduksiItemLine, normalizeLabel, cleanTanggalText };
